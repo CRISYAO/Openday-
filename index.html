@@ -39,13 +39,14 @@
                 </div>
 
                 <button
+                    id="searchButton"
                     onclick="handleSearch()"
                     class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 rounded-lg transition flex items-center justify-center gap-2"
                 >
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
                     </svg>
-                    查询
+                    <span id="searchButtonText">查询</span>
                 </button>
             </div>
 
@@ -61,7 +62,19 @@
                         </svg>
                         <div class="flex-1">
                             <p class="text-sm font-medium text-gray-700 mb-1">您的密码</p>
-                            <p id="passwordText" class="text-lg font-mono font-bold text-gray-900 break-all"></p>
+                            <div class="flex items-center gap-2">
+                                <p id="passwordText" class="text-lg font-mono font-bold text-gray-900 break-all flex-1"></p>
+                                <button 
+                                    onclick="copyPassword()"
+                                    class="px-3 py-1 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 text-sm rounded transition flex items-center gap-1 flex-shrink-0"
+                                    title="复制密码"
+                                >
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                                    </svg>
+                                    <span id="copyButtonText">复制</span>
+                                </button>
+                            </div>
                         </div>
                     </div>
 
@@ -91,31 +104,19 @@
     </div>
 
     <script>
-        // ⚠️ 请在这里替换为你的真实数据
-        const phoneData = {
-            '13534474656': {
-                password: 'Pass123456',
-                prizeUrl: 'https://example.com/prize/claim?id=1'
-            },
-            '13800138001': {
-                password: 'Pass234567',
-                prizeUrl: 'https://example.com/prize/claim?id=2'
-            },
-            '13800138002': {
-                password: 'Pass345678',
-                prizeUrl: 'https://example.com/prize/claim?id=3'
-            }
-            // 继续添加其他147个手机号数据...
-            // 格式: '手机号': { password: '密码', prizeUrl: '兑奖链接' }
-        };
+        // ✅ 你的 Cloudflare Worker API 地址
+        const API_URL = 'https://jdplus.chaohaoyao.workers.dev';
 
         let currentPrizeUrl = '';
+        let currentPassword = '';
 
-        function handleSearch() {
+        async function handleSearch() {
             const phone = document.getElementById('phoneInput').value.trim();
             const errorDiv = document.getElementById('errorMessage');
             const errorText = errorDiv.querySelector('p');
             const resultDiv = document.getElementById('resultContainer');
+            const searchButton = document.getElementById('searchButton');
+            const searchButtonText = document.getElementById('searchButtonText');
 
             // 隐藏之前的结果
             errorDiv.classList.add('hidden');
@@ -134,18 +135,89 @@
                 return;
             }
 
-            // 查找数据
-            const data = phoneData[phone];
-            if (data) {
-                document.getElementById('passwordText').textContent = data.password;
-                document.getElementById('prizeLink').textContent = data.prizeUrl;
-                document.getElementById('prizeLink').href = data.prizeUrl;
-                currentPrizeUrl = data.prizeUrl;
-                resultDiv.classList.remove('hidden');
-            } else {
-                errorText.textContent = '未找到该手机号的信息，请确认手机号是否正确';
+            // 显示加载状态
+            searchButton.disabled = true;
+            searchButtonText.textContent = '查询中...';
+            searchButton.classList.add('opacity-50', 'cursor-not-allowed');
+
+            try {
+                // 调用后端 API
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ phone: phone })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    // 查询成功
+                    currentPassword = data.data.password;
+                    currentPrizeUrl = data.data.prizeUrl;
+                    
+                    document.getElementById('passwordText').textContent = data.data.password;
+                    document.getElementById('prizeLink').textContent = data.data.prizeUrl;
+                    document.getElementById('prizeLink').href = data.data.prizeUrl;
+                    document.getElementById('copyButtonText').textContent = '复制';
+                    resultDiv.classList.remove('hidden');
+                } else {
+                    // 查询失败
+                    errorText.textContent = data.error || '查询失败，请重试';
+                    errorDiv.classList.remove('hidden');
+                }
+            } catch (error) {
+                // 网络错误
+                errorText.textContent = '网络错误，请检查网络连接后重试';
                 errorDiv.classList.remove('hidden');
+            } finally {
+                // 恢复按钮状态
+                searchButton.disabled = false;
+                searchButtonText.textContent = '查询';
+                searchButton.classList.remove('opacity-50', 'cursor-not-allowed');
             }
+        }
+
+        function copyPassword() {
+            const password = currentPassword;
+            const buttonText = document.getElementById('copyButtonText');
+            
+            // 复制到剪贴板
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(password).then(() => {
+                    buttonText.textContent = '已复制';
+                    setTimeout(() => {
+                        buttonText.textContent = '复制';
+                    }, 2000);
+                }).catch(err => {
+                    fallbackCopy(password, buttonText);
+                });
+            } else {
+                fallbackCopy(password, buttonText);
+            }
+        }
+
+        function fallbackCopy(text, buttonText) {
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.style.position = 'fixed';
+            textarea.style.opacity = '0';
+            document.body.appendChild(textarea);
+            textarea.select();
+            try {
+                document.execCommand('copy');
+                buttonText.textContent = '已复制';
+                setTimeout(() => {
+                    buttonText.textContent = '复制';
+                }, 2000);
+            } catch (err) {
+                buttonText.textContent = '复制失败';
+                setTimeout(() => {
+                    buttonText.textContent = '复制';
+                }, 2000);
+            }
+            document.body.removeChild(textarea);
         }
 
         function openPrizeUrl() {
